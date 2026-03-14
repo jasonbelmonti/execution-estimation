@@ -1,6 +1,6 @@
 ---
 name: execution-estimation
-description: Estimate implementation effort for proposed engineering work by comparing anticipated change scope against repository size and structure. Use when triaging tickets, sizing backlog items, deciding whether to decompose work, or producing pre-implementation LoE. Produces deterministic story-point estimates, lines changed, files touched, decomposition recommendations, and blast-radius risk guidance.
+description: Estimate implementation effort for proposed engineering work by comparing anticipated change scope against repository size and structure. Use when triaging tickets, sizing backlog items, deciding whether to decompose work, deciding whether to stop and plan before coding, or producing pre-implementation LoE. Produces deterministic story-point estimates, lines changed, files touched, decomposition recommendations, planning recommendations, and blast-radius risk guidance.
 ---
 
 # Execution Estimation
@@ -40,6 +40,7 @@ python3 <skill-dir>/scripts/estimate_execution.py \
 - `risk.blastRadius.recommendedControls`: stricter review and test controls for high-risk work.
 - `risk.blastRadius.investigationAreas`: adjacent areas to inspect when the touched paths imply wider impact.
 - `estimation.decompositionRecommended`: whether to split the work item.
+- `planning.score`, `planning.level`, and `planning.recommended`: deterministic guidance on whether to stop and plan before coding.
 
 4. Apply execution guidance.
 - Split work when `decompositionRecommended` is `true`.
@@ -47,6 +48,8 @@ python3 <skill-dir>/scripts/estimate_execution.py \
 - Preserve deterministic ordering for proposed split items.
 - Treat blast radius as independent from story points. Small diffs can still require stricter test depth and broader review.
 - When `risk.blastRadius.requiresHeightenedControls` is `true`, explicitly add broader regression coverage, adjacent-boundary review, and the listed investigation items before execution or merge.
+- When `planning.recommended` is `true`, stop after estimation and present a concrete execution plan before implementation.
+- When `planning.level` is `plan-first`, include ordered checkpoints for decomposition, sequencing, risks, and validation before any code edits.
 
 ## Output Contract
 Return a concise summary plus the JSON artifact fields:
@@ -54,9 +57,11 @@ Return a concise summary plus the JSON artifact fields:
 2. Files touched and lines changed.
 3. Comparison percentages against codebase.
 4. Blast radius level, score, signals, recommended controls, and investigation areas.
-5. Decomposition recommendation with rationale.
+5. Planning recommendation level, score, signals, and rationale.
+6. Decomposition recommendation with rationale.
 
 ## Resources
 - Estimator script: `scripts/estimate_execution.py` relative to this skill directory
 - Blast-radius helpers: `scripts/blast_radius.py` relative to this skill directory
+- Planning helpers: `scripts/planning_recommendation.py` relative to this skill directory
 - Rubric and thresholds: `references/estimation-rubric.md` relative to this skill directory

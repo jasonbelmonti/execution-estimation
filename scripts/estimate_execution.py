@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterable
 
 from blast_radius import assess_blast_radius
+from planning_recommendation import assess_planning_recommendation
 
 POINTS = [1, 2, 3, 5, 8, 13]
 SOURCE_EXTENSIONS = {
@@ -314,9 +315,15 @@ def main() -> int:
         or change["files_touched"] >= 18
         or change["lines_changed"] >= 1500
     )
+    planning = assess_planning_recommendation(
+        change=change,
+        story_points=story_points,
+        decomposition_recommended=decomposition_recommended,
+        blast_radius=blast_radius.to_dict(),
+    )
 
     result = {
-        "schemaVersion": "execution-estimation.v2",
+        "schemaVersion": "execution-estimation.v3",
         "mode": change["mode"],
         "repoRoot": str(repo_root),
         "codebase": {
@@ -343,6 +350,7 @@ def main() -> int:
         "risk": {
             "blastRadius": blast_radius.to_dict(),
         },
+        "planning": planning.to_dict(),
         "estimation": {
             "storyPoints": story_points,
             "confidence": confidence,
