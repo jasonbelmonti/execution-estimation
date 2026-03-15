@@ -40,7 +40,8 @@ python3 <skill-dir>/scripts/estimate_execution.py \
 - `risk.blastRadius.recommendedControls`: stricter review and test controls for high-risk work.
 - `risk.blastRadius.investigationAreas`: adjacent areas to inspect when the touched paths imply wider impact.
 - `estimation.decompositionRecommended`: whether to split the work item.
-- `planning.score`, `planning.level`, and `planning.recommended`: deterministic guidance on whether to stop and plan before coding.
+- `planning.recommended`: binary guidance on whether to stop and plan before coding.
+- `planning.matchedRules` and `planning.rationale`: explicit rules that explain why the recommendation is yes or no.
 
 4. Apply execution guidance.
 - Split work when `decompositionRecommended` is `true`.
@@ -49,7 +50,7 @@ python3 <skill-dir>/scripts/estimate_execution.py \
 - Treat blast radius as independent from story points. Small diffs can still require stricter test depth and broader review.
 - When `risk.blastRadius.requiresHeightenedControls` is `true`, explicitly add broader regression coverage, adjacent-boundary review, and the listed investigation items before execution or merge.
 - When `planning.recommended` is `true`, stop after estimation and present a concrete execution plan before implementation.
-- When `planning.level` is `plan-first`, include ordered checkpoints for decomposition, sequencing, risks, and validation before any code edits.
+- When `planning.recommended` is `false`, proceed directly unless the user explicitly asks for a plan.
 
 ## Output Contract
 Return a concise summary plus the JSON artifact fields:
@@ -57,7 +58,7 @@ Return a concise summary plus the JSON artifact fields:
 2. Files touched and lines changed.
 3. Comparison percentages against codebase.
 4. Blast radius level, score, signals, recommended controls, and investigation areas.
-5. Planning recommendation level, score, signals, and rationale.
+5. Planning recommendation as a binary recommendation, matched rules, and rationale.
 6. Decomposition recommendation with rationale.
 
 ## Resources

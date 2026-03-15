@@ -323,7 +323,7 @@ def main() -> int:
     )
 
     result = {
-        "schemaVersion": "execution-estimation.v3",
+        "schemaVersion": "execution-estimation.v4",
         "mode": change["mode"],
         "repoRoot": str(repo_root),
         "codebase": {

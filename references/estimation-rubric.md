@@ -61,27 +61,21 @@ Recommend decomposition when any condition is true:
 ## Planning recommendation
 Planning recommendation is a separate dimension from decomposition. Use it to decide whether to stop after estimation and explicitly plan before implementation.
 
-### Planning signals
-Add weights for each matched condition:
-- `decomposition-recommended` `+3`: decomposition is already required
-- `high-blast-radius` `+3`: blast radius level is `high` or `very-high`
-- `medium-blast-radius` `+2`: blast radius level is `medium`
-- `large-estimate` `+2`: story points `>= 8`
-- `mid-sized-estimate` `+1`: story points `>= 5`
-- `cross-boundary-change` `+1`: top-level directories touched `>= 3`
-- `wide-file-fanout` `+1`: files touched `>= 8`
-- `deep-single-file-churn` `+1`: max single-file churn `>= 300`
-- `proposal-uncertainty` `+1`: proposal-only mode
+### Binary planning rules
+Set `planning.recommended` to `true` when any rule is true:
+- `decomposition-recommended`: `decompositionRecommended` is `true`
+- `high-blast-radius`: blast radius level is `high` or `very-high`
+- `medium-blast-radius-shaping`: blast radius level is `medium` and the work is either proposal-mode or already `>= 5` story points
+- `mid-sized-cross-boundary`: story points `>= 5` and top-level directories touched `>= 3`
+- `wide-proposal-change`: files touched `>= 8` and mode is `proposal`
+- `deep-single-file-churn`: max single-file churn `>= 300`
 
-### Planning levels
-- `0-2`: `direct-execution`
-- `3-4`: `plan-recommended`
-- `>= 5`: `plan-first`
+Set `planning.recommended` to `false` when no planning rule matches.
 
-### Planning guidance
-- `direct-execution`: proceed after estimation unless the user explicitly asks for a plan
-- `plan-recommended`: present a concrete execution plan before coding when the task is still being shaped
-- `plan-first`: stop after estimation and produce a decomposition, sequencing, and validation plan before coding
+### Planning output
+- `planning.recommended`: binary yes/no recommendation
+- `planning.matchedRules`: stable rule keys that caused `true`; empty when `false`
+- `planning.rationale`: human-readable explanation of the matched rules, or a direct-execution explanation when no rule matched
 
 ## Confidence
 - `high`: diff-backed estimate
