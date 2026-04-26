@@ -1,34 +1,31 @@
 # Execution Estimation User Guide
 
-`execution-estimation` is a user-facing estimation skill for sizing engineering work before implementation. It produces deterministic guidance for:
+`execution-estimation` is a user-facing estimation skill for sizing engineering work before or after implementation. It produces deterministic guidance for:
 
 - Story-point-style level of effort
 - Expected or observed file and line churn
 - Relative footprint versus the codebase baseline
 - Blast radius and required quality controls
-- Planning recommendation
-- Decomposition recommendation
+- Planning gates
+- Decomposition gates
+- A single execution action for coding agents
 
-This skill is useful when you want a consistent pre-implementation answer to questions like:
-
-- How big is this task?
-- Is this risky even if the diff is small?
-- Should I stop and make a plan before coding?
-- Should this work be split into smaller items?
+The skill is calibrated for agentic coding workflows: risk signals can increase controls without automatically stopping execution, and decomposition is reserved for true split-worthy footprint.
 
 ## What the skill can do
 
 The skill supports two estimation modes:
 
 1. Diff-backed estimation
-Use this when the work already exists in a branch or diff. The estimator reads the changed file list and actual line churn from git.
+Use this when work already exists in a branch or diff. The estimator reads the changed file list and actual line churn from git.
 
 2. Proposal-backed estimation
-Use this when the work is still planned. The estimator reads a newline-delimited list of proposed files and infers likely churn from file types.
+Use this when work is still planned. The estimator reads a newline-delimited list of proposed files and infers likely churn from file types.
 
 In both modes, the estimator returns deterministic JSON that includes:
 
-- `estimation.storyPoints`
+- `estimation.baseStoryPoints`
+- `estimation.adjustedStoryPoints`
 - `estimation.confidence`
 - `estimation.decompositionRecommended`
 - `change.filesTouched`
@@ -37,30 +34,7 @@ In both modes, the estimator returns deterministic JSON that includes:
 - `comparison.sourceLinesChangedPct`
 - `risk.blastRadius`
 - `planning`
-
-The `planning` object has this shape:
-
-```json
-{
-  "recommended": true,
-  "matchedRules": [
-    "high-blast-radius"
-  ],
-  "rationale": [
-    "planning rule matched: high-blast-radius - blast radius is high enough that sequencing and controls should be decided before coding"
-  ]
-}
-```
-
-`planning.recommended` is always a boolean.
-
-## What it does not do
-
-- It does not automatically switch Codex into the app's actual Planning mode.
-- It does not inspect runtime behavior or business impact beyond file-path and churn signals.
-- It does not replace engineering judgment for ambiguous architecture choices.
-
-Instead, it gives a deterministic recommendation for whether you should stop and plan before implementation.
+- `execution.action`
 
 ## Inputs
 
@@ -87,18 +61,23 @@ You then choose exactly one mode:
 ```bash
 python3 /path/to/execution-estimation/scripts/estimate_execution.py \
   --repo-root /path/to/repo \
-  --base-ref origin/main \
-  --head-ref HEAD
+  --base-ref origin/main
 ```
+
+Optional:
+
+- `--head-ref <ref>` compares a non-`HEAD` ref.
+- `--include-working-tree` includes uncommitted and untracked working-tree changes.
+- `--decomposition-depth <n>` marks already-split child work.
 
 ### Proposal-backed estimate
 
 Create a file containing one proposed path per line:
 
 ```text
-src/api/users.ts
-src/db/schema.sql
-src/api/users.test.ts
+src/auth/token.ts
+db/schema.sql
+tests/auth.test.ts
 ```
 
 Then run:
@@ -111,11 +90,17 @@ python3 /path/to/execution-estimation/scripts/estimate_execution.py \
 
 Optional:
 
-- `--proposal-lines-changed <n>` overrides the inferred line-churn estimate in proposal mode
+- `--proposal-lines-changed <n>` overrides the inferred line-churn estimate in proposal mode.
+- `--decomposition-depth <n>` marks already-split child work.
 
-## How story points are calculated
+## Story Points
 
-The estimator starts from line churn, then adds deterministic risk steps.
+The estimator reports two story-point values:
+
+- `estimation.baseStoryPoints`: line-churn size before risk adjustment.
+- `estimation.adjustedStoryPoints`: base size plus deterministic risk steps.
+
+Risk steps are still useful for communicating uncertainty and review load, but they do not directly force decomposition. This prevents proposal-mode uncertainty from turning ordinary agent tasks into split-required work.
 
 Base story points by lines changed:
 
@@ -135,30 +120,21 @@ Risk steps are added for:
 - Binary changes present
 - Proposal mode uncertainty
 
-The total is then mapped upward to this fixed sequence:
+## Blast Radius
 
-- `1, 2, 3, 5, 8, 13`
-
-## How blast radius works
-
-Blast radius is separate from story points. A small change can still have a high blast radius.
+Blast radius is separate from story points. A small change can still require stronger controls.
 
 The skill adds path-based signals for areas such as:
 
 - Auth and security
 - Database and schema
-- Public API contracts
+- Explicit API contracts
 - Shared or multi-consumer code
 - Runtime entrypoints
 - Build and deploy paths
 - Runtime configuration
 
-It also adds structural signals for:
-
-- Wide file fanout
-- Cross-boundary changes
-- Deep single-file churn
-- Binary artifacts
+Generic `api`, `data`, and `lib` path names do not trigger blast radius by themselves. They are too common as local implementation folders in agentic coding tasks.
 
 Blast-radius levels:
 
@@ -167,95 +143,59 @@ Blast-radius levels:
 - `high`
 - `very-high`
 
-The estimator also returns recommended controls, such as:
+Medium blast radius means targeted tests and owner review are appropriate. It does not stop coding by itself.
 
-- Targeted automated tests
-- Integration or regression coverage
-- Adjacent-boundary review
-- Rollback or containment review
+## Planning Gates
 
-## How planning recommendation works
+The `planning` object keeps a backward-compatible boolean and adds severity:
 
-Planning recommendation is a separate deterministic output. It answers one yes/no question:
+```json
+{
+  "recommended": true,
+  "level": "brief",
+  "blocksExecution": false,
+  "matchedRules": [
+    "mid-sized-cross-boundary"
+  ],
+  "rationale": [
+    "planning rule matched: mid-sized-cross-boundary - base story point estimate is at least 5 and the change spans multiple top-level boundaries"
+  ]
+}
+```
 
-Should you stop after estimation and explicitly plan before coding?
+Planning levels:
 
-The answer lives at:
+- `none`: no planning trigger fired.
+- `brief`: write a short execution note or checklist, then proceed.
+- `required`: stop and produce a concrete plan before coding.
 
-- `planning.recommended`
+`planning.blocksExecution` is the operational stop flag. Do not stop solely because `planning.recommended` is `true`.
 
-It becomes `true` when any explicit planning rule matches:
-
-- `decomposition-recommended`: the work item should already be split before implementation
-- `high-blast-radius`: blast radius is `high` or `very-high`
-- `medium-blast-radius-shaping`: blast radius is `medium` and the work is still proposal-mode or already mid-sized
-- `mid-sized-cross-boundary`: story points are at least `5` and the change spans at least `3` top-level directories
-- `wide-proposal-change`: proposal mode touches at least `8` files
-- `deep-single-file-churn`: max single-file churn is at least `300`
-
-If no planning rule matches:
-
-- `planning.recommended` is `false`
-- `planning.matchedRules` is empty
-- `planning.rationale` explains that direct execution is appropriate unless the user explicitly asks for a plan
-
-Important:
-
-- This is a binary recommendation output, not an enum.
-- It does not flip the product into true Planning mode.
-
-## How decomposition recommendation works
+## Decomposition Gates
 
 The skill recommends splitting work when any of these are true:
 
-- Story points `>= 8`
+- Base story points `>= 8`
+- Base story points `>= 13`, even for decomposed child tasks
 - Files touched `>= 18`
 - Lines changed `>= 1500`
 
-When decomposition is recommended, split by workflow boundary or risk boundary, for example:
+When estimating a child task that already came from decomposition, pass `--decomposition-depth 1`. At depth greater than `0`, the estimator suppresses repeat decomposition from base story points `>= 8` unless a hard footprint threshold also matches. This prevents recursive split loops.
 
-- Resolver, integration, tests
-- Schema, runtime, integration
+## Execution Action
 
-## Understanding the output
+Use `execution.action` as the authoritative gate:
 
-Typical output sections:
+- `proceed`: execute directly.
+- `proceed-with-controls`: execute after applying listed controls or brief planning notes.
+- `plan-first`: stop and plan before coding.
+- `decompose-first`: stop and split before coding.
 
-- `codebase`: baseline repository size used for comparison
-- `change`: the direct footprint of the diff or proposal
-- `comparison`: percent of the repository touched
-- `risk.blastRadius`: risk signals, level, controls, and investigation areas
-- `planning`: boolean recommendation plus matched rules and rationale
-- `estimation`: story points, confidence, rationale, and decomposition guidance
+This lets the estimator preserve thorough risk assessment without treating every risk signal as a coding blocker.
 
-Example interpretation:
+## Confidence
 
-- High story points plus low blast radius means the work is large but locally contained.
-- Low story points plus high blast radius means the change is small but touches sensitive boundaries.
-- `planning.recommended = true` means you should stop after estimation and produce an execution plan before coding.
-- `planning.recommended = false` means direct execution is appropriate unless the user explicitly asks for a plan.
-- `decompositionRecommended = true` means the work should be split into smaller items.
+- `high`: diff-backed estimate.
+- `medium`: proposal-backed estimate.
 
-## Confidence levels
-
-- `high`: diff-backed estimate
-- `medium`: proposal-backed estimate
-
-Proposal mode is intentionally more conservative because the actual diff does not exist yet.
-
-## Recommended workflow
-
-1. Gather the target repo and either a real diff or a proposed file list.
-2. Run the estimator.
-3. Report the JSON fields, not just a single story-point number.
-4. Use blast radius to choose test depth and review breadth.
-5. Use planning recommendation to decide whether to stop and plan.
-6. Use decomposition recommendation to decide whether to split the work item.
-
-## Related files
-
-- `SKILL.md`: agent instructions for using the skill
-- `references/estimation-rubric.md`: thresholds and deterministic rules
-- `scripts/estimate_execution.py`: main estimator
-- `scripts/blast_radius.py`: blast-radius logic
-- `scripts/planning_recommendation.py`: planning recommendation logic
+Proposal mode is less certain, but that uncertainty is reflected in adjusted story points and confidence rather than automatic decomposition.

@@ -1,6 +1,6 @@
 ---
 name: execution-estimation
-description: Estimate implementation effort for proposed engineering work by comparing anticipated change scope against repository size and structure. Use when triaging tickets, sizing backlog items, deciding whether to decompose work, deciding whether to stop and plan before coding, or producing pre-implementation LoE. Produces deterministic story-point estimates, lines changed, files touched, decomposition recommendations, planning recommendations, and blast-radius risk guidance.
+description: Estimate scope, change footprint, blast radius, and execution gates for proposed work or an existing diff. Use when sizing a task, assessing implementation risk, deciding whether to split work, or deciding whether planning must block coding.
 ---
 
 # Execution Estimation
@@ -8,21 +8,18 @@ description: Estimate implementation effort for proposed engineering work by com
 ## Workflow
 1. Collect inputs.
 - Use `repoRoot` for the target repository.
-- Use `baseRef` and `headRef` when an actual diff exists.
-- Use a proposed file list when work is planned but not yet implemented.
-
-Skill-local resources:
-- The estimator script and rubric live inside this skill folder, not inside the target repo.
-- Resolve `scripts/estimate_execution.py` and `references/estimation-rubric.md` relative to this
-  `SKILL.md`.
+- Use diff mode with `baseRef` and optional `headRef` when an actual diff exists.
+- Add `--include-working-tree` in diff mode when uncommitted or untracked working-tree changes are part of the estimate.
+- Use proposal mode with a newline-delimited proposed file list when work is planned but not yet implemented.
+- Add `--decomposition-depth 1` or higher when estimating a child task that already came from decomposition.
+- Resolve skill-local resources relative to this `SKILL.md`, not relative to the target repo.
 
 2. Run the estimator.
 - Diff-backed estimate:
 ```bash
 python3 <skill-dir>/scripts/estimate_execution.py \
   --repo-root /path/to/repo \
-  --base-ref origin/main \
-  --head-ref HEAD
+  --base-ref origin/main
 ```
 - Proposal-backed estimate:
 ```bash
@@ -30,39 +27,37 @@ python3 <skill-dir>/scripts/estimate_execution.py \
   --repo-root /path/to/repo \
   --proposed-files /path/to/proposed-files.txt
 ```
+- Use `--head-ref <ref>` only when the default `HEAD` is not the intended comparison target.
+- Use `--proposal-lines-changed <n>` only when the proposal file list materially understates or overstates likely churn and you need to override the heuristic estimate.
 
-3. Report deterministic output fields.
-- `estimation.storyPoints`: recommended LoE in story points.
-- `change.filesTouched`: expected/observed files touched.
-- `change.linesChanged`: expected/observed line churn.
-- `comparison`: relative impact versus repository baseline.
-- `risk.blastRadius.score` and `risk.blastRadius.level`: deterministic blast-radius assessment.
-- `risk.blastRadius.recommendedControls`: stricter review and test controls for high-risk work.
-- `risk.blastRadius.investigationAreas`: adjacent areas to inspect when the touched paths imply wider impact.
-- `estimation.decompositionRecommended`: whether to split the work item.
-- `planning.recommended`: binary guidance on whether to stop and plan before coding.
-- `planning.matchedRules` and `planning.rationale`: explicit rules that explain why the recommendation is yes or no.
+3. Handle failures before interpreting results.
+- If the estimator exits non-zero or returns an `error` object, report the error verbatim.
+- Do not fabricate an estimate when inputs are missing, the repo is invalid, or the proposal file cannot be read.
+- Fix the input problem first, then rerun the estimator.
 
-4. Apply execution guidance.
-- Split work when `decompositionRecommended` is `true`.
+4. Report deterministic output.
+- Return a concise summary plus the raw JSON artifact when the user asked for an estimate.
+- Include `schemaVersion`, `mode`, and `repoRoot`.
+- Include `codebase`, `change`, and `comparison`.
+- Include `risk.blastRadius.score`, `risk.blastRadius.level`, `risk.blastRadius.signals`, `risk.blastRadius.requiresHeightenedControls`, `risk.blastRadius.recommendedControls`, and `risk.blastRadius.investigationAreas`.
+- Include `planning.recommended`, `planning.level`, `planning.blocksExecution`, `planning.matchedRules`, and `planning.rationale`.
+- Include `execution.action` and `execution.rationale`.
+- Include `estimation.baseStoryPoints`, `estimation.adjustedStoryPoints`, `estimation.confidence`, `estimation.riskSteps`, `estimation.decompositionRecommended`, and `estimation.decompositionRationale`.
+
+5. Apply execution guidance.
+- Treat `execution.action` as the authoritative gate.
+- Proceed directly when `execution.action` is `proceed`.
+- Proceed with the listed controls when `execution.action` is `proceed-with-controls`; do not stop solely because `planning.recommended` is `true`.
+- Stop and present a concrete plan before implementation only when `execution.action` is `plan-first` or `planning.blocksExecution` is `true`.
+- Stop and split the work only when `execution.action` is `decompose-first` or `estimation.decompositionRecommended` is `true`.
 - Split by workflow boundary (resolver/integration/tests) or by risk boundary (schema/runtime/integration).
 - Preserve deterministic ordering for proposed split items.
+- Do not recursively decompose an already-split child task unless the estimator still returns `decompose-first` with `--decomposition-depth` set.
 - Treat blast radius as independent from story points. Small diffs can still require stricter test depth and broader review.
 - When `risk.blastRadius.requiresHeightenedControls` is `true`, explicitly add broader regression coverage, adjacent-boundary review, and the listed investigation items before execution or merge.
-- When `planning.recommended` is `true`, stop after estimation and present a concrete execution plan before implementation.
-- When `planning.recommended` is `false`, proceed directly unless the user explicitly asks for a plan.
-
-## Output Contract
-Return a concise summary plus the JSON artifact fields:
-1. Story points and confidence.
-2. Files touched and lines changed.
-3. Comparison percentages against codebase.
-4. Blast radius level, score, signals, recommended controls, and investigation areas.
-5. Planning recommendation as a binary recommendation, matched rules, and rationale.
-6. Decomposition recommendation with rationale.
 
 ## Resources
-- Estimator script: `scripts/estimate_execution.py` relative to this skill directory
-- Blast-radius helpers: `scripts/blast_radius.py` relative to this skill directory
-- Planning helpers: `scripts/planning_recommendation.py` relative to this skill directory
-- Rubric and thresholds: `references/estimation-rubric.md` relative to this skill directory
+- Run `scripts/estimate_execution.py` first for normal use.
+- Read `references/estimation-rubric.md` when you need to explain why the estimate landed where it did or when you need the threshold table.
+- Read `scripts/blast_radius.py` when debugging or changing blast-radius signals, controls, or investigation areas.
+- Read `scripts/planning_recommendation.py` when debugging or changing planning trigger rules.
