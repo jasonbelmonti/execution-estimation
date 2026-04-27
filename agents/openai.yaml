@@ -1,4 +1,4 @@
 interface:
   display_name: "Execution Estimation"
-  short_description: "Estimate LoE, blast radius, and planning need"
-  default_prompt: "Use $execution-estimation to estimate LoE, change footprint, blast radius, and whether planning is recommended before coding."
+  short_description: "Estimate scope, risk, and planning need"
+  default_prompt: "Use $execution-estimation to size this task, assess blast radius, and decide whether to split or plan before coding."
