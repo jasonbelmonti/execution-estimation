@@ -1,6 +1,6 @@
 # Execution Estimation User Guide
 
-`execution-estimation` is a user-facing estimation skill for sizing engineering work before implementation. It produces deterministic guidance for:
+`execution-estimation` is a user-facing estimation skill for sizing engineering work before implementation. It estimates scope, change footprint, blast radius, and whether planning or decomposition is recommended for a proposed change or existing diff. It produces deterministic guidance for:
 
 - Story-point-style level of effort
 - Expected or observed file and line churn
@@ -28,14 +28,25 @@ Use this when the work is still planned. The estimator reads a newline-delimited
 
 In both modes, the estimator returns deterministic JSON that includes:
 
+- `schemaVersion`
+- `mode`
+- `repoRoot`
+- `codebase`
 - `estimation.storyPoints`
 - `estimation.confidence`
+- `estimation.riskSteps`
 - `estimation.decompositionRecommended`
+- `estimation.rationale`
 - `change.filesTouched`
 - `change.linesChanged`
 - `comparison.trackedFilesTouchedPct`
 - `comparison.sourceLinesChangedPct`
-- `risk.blastRadius`
+- `risk.blastRadius.score`
+- `risk.blastRadius.level`
+- `risk.blastRadius.signals`
+- `risk.blastRadius.requiresHeightenedControls`
+- `risk.blastRadius.recommendedControls`
+- `risk.blastRadius.investigationAreas`
 - `planning`
 
 The `planning` object has this shape:
@@ -87,8 +98,7 @@ You then choose exactly one mode:
 ```bash
 python3 /path/to/execution-estimation/scripts/estimate_execution.py \
   --repo-root /path/to/repo \
-  --base-ref origin/main \
-  --head-ref HEAD
+  --base-ref origin/main
 ```
 
 ### Proposal-backed estimate
@@ -111,7 +121,14 @@ python3 /path/to/execution-estimation/scripts/estimate_execution.py \
 
 Optional:
 
+- `--head-ref <ref>` sets a comparison target other than the default `HEAD`
 - `--proposal-lines-changed <n>` overrides the inferred line-churn estimate in proposal mode
+
+## Failure handling
+
+If the estimator exits non-zero or returns an `error` object, report the error verbatim.
+
+Do not fabricate an estimate when inputs are missing, the repo is invalid, or the proposal file cannot be read. Fix the input problem first, then rerun the estimator.
 
 ## How story points are calculated
 
@@ -221,12 +238,15 @@ When decomposition is recommended, split by workflow boundary or risk boundary, 
 
 Typical output sections:
 
+- `schemaVersion`: output contract version
+- `mode`: `diff` or `proposal`
+- `repoRoot`: target repository path used for the estimate
 - `codebase`: baseline repository size used for comparison
 - `change`: the direct footprint of the diff or proposal
 - `comparison`: percent of the repository touched
-- `risk.blastRadius`: risk signals, level, controls, and investigation areas
+- `risk.blastRadius`: score, level, signals, heightened-control flag, controls, and investigation areas
 - `planning`: boolean recommendation plus matched rules and rationale
-- `estimation`: story points, confidence, rationale, and decomposition guidance
+- `estimation`: story points, confidence, risk steps, rationale, and decomposition guidance
 
 Example interpretation:
 
@@ -247,10 +267,11 @@ Proposal mode is intentionally more conservative because the actual diff does no
 
 1. Gather the target repo and either a real diff or a proposed file list.
 2. Run the estimator.
-3. Report the JSON fields, not just a single story-point number.
-4. Use blast radius to choose test depth and review breadth.
-5. Use planning recommendation to decide whether to stop and plan.
-6. Use decomposition recommendation to decide whether to split the work item.
+3. If the estimator fails, report the error verbatim, fix the inputs, and rerun.
+4. Report the required JSON fields, not just a single story-point number.
+5. Use blast radius to choose test depth and review breadth.
+6. Use planning recommendation to decide whether to stop and plan.
+7. Use decomposition recommendation to decide whether to split the work item.
 
 ## Related files
 
