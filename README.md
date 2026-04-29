@@ -1,6 +1,6 @@
 # Execution Estimation User Guide
 
-`execution-estimation` is a user-facing estimation skill for sizing engineering work before or after implementation. It produces deterministic guidance for:
+`execution-estimation` is a user-facing estimation skill for sizing engineering work before or after implementation. It estimates scope, change footprint, blast radius, planning gates, and decomposition gates. It produces deterministic guidance for:
 
 - Story-point-style level of effort
 - Expected or observed file and line churn
@@ -24,17 +24,35 @@ Use this when work is still planned. The estimator reads a newline-delimited lis
 
 In both modes, the estimator returns deterministic JSON that includes:
 
+- `schemaVersion`
+- `mode`
+- `repoRoot`
+- `codebase`
+- `change`
+- `comparison`
+- `risk.blastRadius`
+- `planning.recommended`
+- `planning.level`
+- `planning.blocksExecution`
+- `planning.matchedRules`
+- `planning.rationale`
+- `execution.action`
+- `execution.rationale`
+- `estimation.storyPoints`
 - `estimation.baseStoryPoints`
 - `estimation.adjustedStoryPoints`
 - `estimation.confidence`
+- `estimation.riskSteps`
 - `estimation.decompositionRecommended`
-- `change.filesTouched`
-- `change.linesChanged`
-- `comparison.trackedFilesTouchedPct`
-- `comparison.sourceLinesChangedPct`
-- `risk.blastRadius`
-- `planning`
-- `execution.action`
+- `estimation.decompositionRationale`
+
+## What it does not do
+
+- It does not automatically switch Codex into the app's actual Planning mode.
+- It does not inspect runtime behavior or business impact beyond file-path and churn signals.
+- It does not replace engineering judgment for ambiguous architecture choices.
+
+Instead, it gives deterministic execution guidance for whether to proceed, proceed with controls, plan first, or decompose first.
 
 ## Inputs
 
@@ -93,6 +111,12 @@ Optional:
 - `--proposal-lines-changed <n>` overrides the inferred line-churn estimate in proposal mode.
 - `--decomposition-depth <n>` marks already-split child work.
 
+## Failure handling
+
+If the estimator exits non-zero or returns an `error` object, report the error verbatim.
+
+Do not fabricate an estimate when inputs are missing, the repo is invalid, or the proposal file cannot be read. Fix the input problem first, then rerun the estimator.
+
 ## Story Points
 
 The estimator reports two story-point values:
@@ -120,6 +144,10 @@ Risk steps are added for:
 - Binary changes present
 - Proposal mode uncertainty
 
+The adjusted total is mapped upward to this fixed sequence:
+
+- `1, 2, 3, 5, 8, 13`
+
 ## Blast Radius
 
 Blast radius is separate from story points. A small change can still require stronger controls.
@@ -133,6 +161,13 @@ The skill adds path-based signals for areas such as:
 - Runtime entrypoints
 - Build and deploy paths
 - Runtime configuration
+
+It also adds structural signals for:
+
+- Wide file fanout
+- Cross-boundary changes
+- Deep single-file churn
+- Binary artifacts
 
 Generic `api`, `data`, and `lib` path names do not trigger blast radius by themselves. They are too common as local implementation folders in agentic coding tasks.
 
@@ -199,3 +234,21 @@ This lets the estimator preserve thorough risk assessment without treating every
 - `medium`: proposal-backed estimate.
 
 Proposal mode is less certain, but that uncertainty is reflected in adjusted story points and confidence rather than automatic decomposition.
+
+## Recommended workflow
+
+1. Gather the target repo and either a real diff or a proposed file list.
+2. Run the estimator.
+3. If the estimator fails, report the error verbatim, fix the inputs, and rerun.
+4. Report the required JSON fields, not just a single story-point number.
+5. Use `execution.action` as the authoritative gate.
+6. Use blast radius to choose test depth and review breadth.
+7. Use decomposition guidance to decide whether to split the work item.
+
+## Related files
+
+- `SKILL.md`: agent instructions for using the skill
+- `references/estimation-rubric.md`: thresholds and deterministic rules
+- `scripts/estimate_execution.py`: main estimator
+- `scripts/blast_radius.py`: blast-radius logic
+- `scripts/planning_recommendation.py`: planning recommendation logic
