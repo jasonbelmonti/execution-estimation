@@ -175,13 +175,7 @@ def estimate_lines_for_path(path: str) -> int:
     return 70
 
 
-def collect_diff_change(repo_root: Path, base_ref: str, head_ref: str, include_working_tree: bool) -> dict:
-    if include_working_tree:
-        merge_base = run_git(repo_root, ["merge-base", base_ref, head_ref]).strip()
-        revision_args = [merge_base]
-    else:
-        revision_args = [f"{base_ref}...{head_ref}"]
-
+def collect_git_diff_stats(repo_root: Path, revision_args: list[str]) -> dict:
     names_raw = run_git(repo_root, ["diff", "--name-only", "--diff-filter=ACDMRTUXB", *revision_args])
     files = normalize_paths(names_raw.splitlines())
 
@@ -207,7 +201,37 @@ def collect_diff_change(repo_root: Path, base_ref: str, head_ref: str, include_w
         deleted += del_v
         max_file_churn = max(max_file_churn, add_v + del_v)
 
+    return {
+        "files": files,
+        "lines_added": added,
+        "lines_deleted": deleted,
+        "binaries_touched": binaries,
+        "max_file_churn": max_file_churn,
+    }
+
+
+def collect_diff_change(repo_root: Path, base_ref: str, head_ref: str, include_working_tree: bool) -> dict:
     if include_working_tree:
+        merge_base = run_git(repo_root, ["merge-base", base_ref, head_ref]).strip()
+        revision_args = [merge_base, head_ref]
+    else:
+        revision_args = [f"{base_ref}...{head_ref}"]
+
+    stats = collect_git_diff_stats(repo_root, revision_args)
+    files = stats["files"]
+    added = stats["lines_added"]
+    deleted = stats["lines_deleted"]
+    binaries = stats["binaries_touched"]
+    max_file_churn = stats["max_file_churn"]
+
+    if include_working_tree:
+        working_tree_stats = collect_git_diff_stats(repo_root, ["HEAD"])
+        files = normalize_paths([*files, *working_tree_stats["files"]])
+        added += working_tree_stats["lines_added"]
+        deleted += working_tree_stats["lines_deleted"]
+        binaries += working_tree_stats["binaries_touched"]
+        max_file_churn = max(max_file_churn, working_tree_stats["max_file_churn"])
+
         untracked = normalize_paths(
             split_null_terminated(
                 run_git(repo_root, ["ls-files", "--others", "--exclude-standard", "-z"])

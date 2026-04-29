@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import sys
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,6 +15,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from blast_radius import assess_blast_radius  # noqa: E402
 from estimate_execution import (  # noqa: E402
     assess_decomposition,
+    collect_diff_change,
     decide_execution,
     estimate_lines_for_path,
     estimate_story_points,
@@ -20,6 +23,20 @@ from estimate_execution import (  # noqa: E402
     top_level_dirs,
 )
 from planning_recommendation import assess_planning_recommendation  # noqa: E402
+
+
+def git(repo_root: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(repo_root), *args],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return result.stdout
+
+
+def write_text(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
 
 
 def proposal_change(paths: list[str], lines_changed: int | None = None) -> dict:
@@ -122,6 +139,36 @@ class AgenticGateTests(unittest.TestCase):
 
         self.assertTrue(first_pass.recommended)
         self.assertFalse(child_pass.recommended)
+
+    def test_include_working_tree_honors_explicit_head_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            git(repo_root, "init")
+            git(repo_root, "checkout", "-b", "main")
+            git(repo_root, "config", "user.email", "test@example.com")
+            git(repo_root, "config", "user.name", "Test User")
+
+            write_text(repo_root / "base.txt", "base\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "base")
+
+            git(repo_root, "checkout", "-b", "requested-head")
+            write_text(repo_root / "requested.txt", "requested\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "requested change")
+
+            git(repo_root, "checkout", "main")
+            git(repo_root, "checkout", "-b", "current-head")
+            write_text(repo_root / "current.txt", "current\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "current change")
+            write_text(repo_root / "local.txt", "local\n")
+
+            change = collect_diff_change(repo_root, "main", "requested-head", True)
+
+            self.assertIn("requested.txt", change["files"])
+            self.assertIn("local.txt", change["files"])
+            self.assertNotIn("current.txt", change["files"])
 
 
 if __name__ == "__main__":
