@@ -136,6 +136,7 @@ class BlastRadiusSignal:
 class BlastRadiusAssessment:
     score: int
     level: str
+    low_impact_only: bool
     signals: tuple[BlastRadiusSignal, ...]
     requires_heightened_controls: bool
     recommended_controls: tuple[str, ...]
@@ -145,6 +146,7 @@ class BlastRadiusAssessment:
         return {
             "score": self.score,
             "level": self.level,
+            "lowImpactOnly": self.low_impact_only,
             "signals": [signal.to_dict() for signal in self.signals],
             "requiresHeightenedControls": self.requires_heightened_controls,
             "recommendedControls": list(self.recommended_controls),
@@ -230,7 +232,6 @@ def matches_data_schema(path: str) -> bool:
     return normalized.endswith(".sql") or bool(
         tokens
         & {
-            "data",
             "database",
             "db",
             "ddl",
@@ -251,7 +252,6 @@ def matches_api_contract(path: str) -> bool:
     return normalized.endswith((".avsc", ".graphql", ".proto")) or bool(
         tokens
         & {
-            "api",
             "contract",
             "contracts",
             "dto",
@@ -268,7 +268,7 @@ def matches_shared_surface(path: str) -> bool:
     normalized = normalize_path(path)
     tokens = path_tokens(path)
     return normalized.startswith("packages/") or bool(
-        tokens & {"common", "core", "lib", "libs", "platform", "shared", "sdk"}
+        tokens & {"common", "core", "platform", "shared", "sdk"}
     )
 
 
@@ -457,6 +457,7 @@ def assess_blast_radius(change: dict) -> BlastRadiusAssessment:
     return BlastRadiusAssessment(
         score=score,
         level=level,
+        low_impact_only=low_impact_only,
         signals=tuple(signals),
         requires_heightened_controls=requires_heightened_controls,
         recommended_controls=recommended_controls,

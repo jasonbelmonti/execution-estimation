@@ -38,6 +38,33 @@ class CodebaseMetrics:
     skipped_binary_files: int
 
 
+@dataclass(frozen=True)
+class StoryPointEstimate:
+    base_story_points: int
+    adjusted_story_points: int
+    confidence: str
+    risk_steps: int
+    rationale: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DecompositionAssessment:
+    recommended: bool
+    rationale: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ExecutionDecision:
+    action: str
+    rationale: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "action": self.action,
+            "rationale": list(self.rationale),
+        }
+
+
 def run_git(repo_root: Path, args: list[str]) -> str:
     command = ["git", "-C", str(repo_root), *args]
     result = subprocess.run(command, capture_output=True, text=True)
@@ -75,6 +102,11 @@ def count_file_lines(path: Path) -> int:
         line_count += 1
 
     return line_count
+
+
+def is_binary_file(path: Path) -> bool:
+    with path.open("rb") as probe:
+        return b"\0" in probe.read(4096)
 
 
 def collect_codebase_metrics(repo_root: Path) -> CodebaseMetrics:
@@ -143,12 +175,11 @@ def estimate_lines_for_path(path: str) -> int:
     return 70
 
 
-def collect_diff_change(repo_root: Path, base_ref: str, head_ref: str) -> dict:
-    revision = f"{base_ref}...{head_ref}"
-    names_raw = run_git(repo_root, ["diff", "--name-only", "--diff-filter=ACDMRTUXB", revision])
+def collect_git_diff_stats(repo_root: Path, revision_args: list[str]) -> dict:
+    names_raw = run_git(repo_root, ["diff", "--name-only", "--diff-filter=ACDMRTUXB", *revision_args])
     files = normalize_paths(names_raw.splitlines())
 
-    numstat_raw = run_git(repo_root, ["diff", "--numstat", revision])
+    numstat_raw = run_git(repo_root, ["diff", "--numstat", *revision_args])
     added = 0
     deleted = 0
     binaries = 0
@@ -169,6 +200,61 @@ def collect_diff_change(repo_root: Path, base_ref: str, head_ref: str) -> dict:
         added += add_v
         deleted += del_v
         max_file_churn = max(max_file_churn, add_v + del_v)
+
+    return {
+        "files": files,
+        "lines_added": added,
+        "lines_deleted": deleted,
+        "binaries_touched": binaries,
+        "max_file_churn": max_file_churn,
+    }
+
+
+def collect_diff_change(repo_root: Path, base_ref: str, head_ref: str, include_working_tree: bool) -> dict:
+    if include_working_tree:
+        merge_base = run_git(repo_root, ["merge-base", base_ref, head_ref]).strip()
+        revision_args = [merge_base, head_ref]
+    else:
+        revision_args = [f"{base_ref}...{head_ref}"]
+
+    stats = collect_git_diff_stats(repo_root, revision_args)
+    files = stats["files"]
+    added = stats["lines_added"]
+    deleted = stats["lines_deleted"]
+    binaries = stats["binaries_touched"]
+    max_file_churn = stats["max_file_churn"]
+
+    if include_working_tree:
+        working_tree_stats = collect_git_diff_stats(repo_root, ["HEAD"])
+        files = normalize_paths([*files, *working_tree_stats["files"]])
+        added += working_tree_stats["lines_added"]
+        deleted += working_tree_stats["lines_deleted"]
+        binaries += working_tree_stats["binaries_touched"]
+        max_file_churn = max(max_file_churn, working_tree_stats["max_file_churn"])
+
+        untracked = normalize_paths(
+            split_null_terminated(
+                run_git(repo_root, ["ls-files", "--others", "--exclude-standard", "-z"])
+            )
+        )
+        files = normalize_paths([*files, *untracked])
+
+        for rel_path in untracked:
+            full_path = repo_root / rel_path
+            if not full_path.exists() or not full_path.is_file():
+                continue
+
+            try:
+                if is_binary_file(full_path):
+                    binaries += 1
+                    continue
+
+                file_lines = count_file_lines(full_path)
+            except OSError:
+                continue
+
+            added += file_lines
+            max_file_churn = max(max_file_churn, file_lines)
 
     return {
         "mode": "diff",
@@ -229,7 +315,7 @@ def to_points(raw_score: int) -> int:
     return POINTS[-1]
 
 
-def estimate_story_points(change: dict) -> tuple[int, list[str], str, int]:
+def estimate_story_points(change: dict) -> StoryPointEstimate:
     base = base_story_points(change["lines_changed"])
     risk_steps = 0
     rationale: list[str] = [
@@ -255,9 +341,76 @@ def estimate_story_points(change: dict) -> tuple[int, list[str], str, int]:
         risk_steps += 1
         rationale.append("risk step: proposal mode uncertainty")
 
-    suggested = to_points(base + risk_steps)
+    adjusted = to_points(base + risk_steps)
     confidence = "high" if change["mode"] == "diff" else "medium"
-    return suggested, rationale, confidence, risk_steps
+    return StoryPointEstimate(
+        base_story_points=base,
+        adjusted_story_points=adjusted,
+        confidence=confidence,
+        risk_steps=risk_steps,
+        rationale=tuple(rationale),
+    )
+
+
+def assess_decomposition(
+    change: dict,
+    base_story_points_value: int,
+    decomposition_depth: int,
+) -> DecompositionAssessment:
+    rationale: list[str] = []
+
+    if change["files_touched"] >= 18:
+        rationale.append("decomposition rule matched: files touched >= 18")
+    if change["lines_changed"] >= 1500:
+        rationale.append("decomposition rule matched: lines changed >= 1500")
+    if base_story_points_value >= 13:
+        rationale.append("decomposition rule matched: base story points >= 13")
+
+    if rationale:
+        return DecompositionAssessment(recommended=True, rationale=tuple(rationale))
+
+    if base_story_points_value >= 8:
+        if decomposition_depth > 0:
+            return DecompositionAssessment(
+                recommended=False,
+                rationale=(
+                    "decomposition rule suppressed: task is already a decomposed child and no hard footprint threshold matched",
+                ),
+            )
+        return DecompositionAssessment(
+            recommended=True,
+            rationale=("decomposition rule matched: base story points >= 8",),
+        )
+
+    return DecompositionAssessment(
+        recommended=False,
+        rationale=("decomposition rule not matched: raw footprint is below split thresholds",),
+    )
+
+
+def decide_execution(decomposition: DecompositionAssessment, planning: object, blast_radius: object) -> ExecutionDecision:
+    if decomposition.recommended:
+        return ExecutionDecision(
+            action="decompose-first",
+            rationale=("decomposition is required before execution",),
+        )
+
+    if planning.blocks_execution:
+        return ExecutionDecision(
+            action="plan-first",
+            rationale=("planning has a required blocking gate before execution",),
+        )
+
+    if planning.recommended or blast_radius.requires_heightened_controls or blast_radius.level != "low":
+        return ExecutionDecision(
+            action="proceed-with-controls",
+            rationale=("execution may proceed after applying the listed planning notes and quality controls",),
+        )
+
+    return ExecutionDecision(
+        action="proceed",
+        rationale=("no blocking planning or decomposition gate matched",),
+    )
 
 
 def as_percent(numerator: int, denominator: int) -> float:
@@ -271,11 +424,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo-root", required=True, help="Path to the git repository")
     parser.add_argument("--base-ref", help="Base ref for diff-backed estimation")
     parser.add_argument("--head-ref", default="HEAD", help="Head ref for diff-backed estimation")
+    parser.add_argument(
+        "--include-working-tree",
+        action="store_true",
+        help="In diff mode, compare the merge-base to the current working tree instead of committed HEAD only",
+    )
     parser.add_argument("--proposed-files", help="Path to newline-delimited proposed file list")
     parser.add_argument(
         "--proposal-lines-changed",
         type=int,
         help="Override estimated line churn in proposal mode",
+    )
+    parser.add_argument(
+        "--decomposition-depth",
+        type=int,
+        default=0,
+        help="Use a value greater than 0 for child tasks that were already produced by decomposition",
     )
     return parser.parse_args()
 
@@ -301,29 +465,31 @@ def main() -> int:
     codebase = collect_codebase_metrics(repo_root)
 
     if has_diff_mode:
-        change = collect_diff_change(repo_root, args.base_ref, args.head_ref)
+        change = collect_diff_change(repo_root, args.base_ref, args.head_ref, args.include_working_tree)
     else:
         proposed_file_path = Path(args.proposed_files).resolve()
         if not proposed_file_path.exists() or not proposed_file_path.is_file():
             raise EstimationError(f"proposed file list does not exist: {proposed_file_path}")
         change = collect_proposal_change(proposed_file_path, args.proposal_lines_changed)
 
-    story_points, rationale, confidence, risk_steps = estimate_story_points(change)
+    story_points = estimate_story_points(change)
     blast_radius = assess_blast_radius(change)
-    decomposition_recommended = (
-        story_points >= 8
-        or change["files_touched"] >= 18
-        or change["lines_changed"] >= 1500
+    decomposition = assess_decomposition(
+        change=change,
+        base_story_points_value=story_points.base_story_points,
+        decomposition_depth=args.decomposition_depth,
     )
     planning = assess_planning_recommendation(
         change=change,
-        story_points=story_points,
-        decomposition_recommended=decomposition_recommended,
+        base_story_points=story_points.base_story_points,
+        adjusted_story_points=story_points.adjusted_story_points,
+        decomposition_recommended=decomposition.recommended,
         blast_radius=blast_radius.to_dict(),
     )
+    execution = decide_execution(decomposition, planning, blast_radius)
 
     result = {
-        "schemaVersion": "execution-estimation.v4",
+        "schemaVersion": "execution-estimation.v5",
         "mode": change["mode"],
         "repoRoot": str(repo_root),
         "codebase": {
@@ -351,12 +517,17 @@ def main() -> int:
             "blastRadius": blast_radius.to_dict(),
         },
         "planning": planning.to_dict(),
+        "execution": execution.to_dict(),
         "estimation": {
-            "storyPoints": story_points,
-            "confidence": confidence,
-            "riskSteps": risk_steps,
-            "decompositionRecommended": decomposition_recommended,
-            "rationale": rationale,
+            "storyPoints": story_points.adjusted_story_points,
+            "baseStoryPoints": story_points.base_story_points,
+            "adjustedStoryPoints": story_points.adjusted_story_points,
+            "confidence": story_points.confidence,
+            "riskSteps": story_points.risk_steps,
+            "decompositionDepth": args.decomposition_depth,
+            "decompositionRecommended": decomposition.recommended,
+            "decompositionRationale": list(decomposition.rationale),
+            "rationale": list(story_points.rationale),
         },
     }
 

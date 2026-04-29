@@ -1,4 +1,4 @@
 interface:
   display_name: "Execution Estimation"
-  short_description: "Estimate scope, risk, and planning need"
-  default_prompt: "Use $execution-estimation to size this task, assess blast radius, and decide whether to split or plan before coding."
+  short_description: "Estimate scope, risk, and execution gates"
+  default_prompt: "Use $execution-estimation to size this task, assess blast radius, and decide whether to proceed, proceed with controls, plan first, or decompose first."
