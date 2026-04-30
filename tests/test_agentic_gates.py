@@ -140,6 +140,32 @@ class AgenticGateTests(unittest.TestCase):
         self.assertTrue(first_pass.recommended)
         self.assertFalse(child_pass.recommended)
 
+    def test_include_working_tree_reports_net_churn_for_current_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            git(repo_root, "init")
+            git(repo_root, "checkout", "-b", "main")
+            git(repo_root, "config", "user.email", "test@example.com")
+            git(repo_root, "config", "user.name", "Test User")
+
+            write_text(repo_root / "estimate.txt", "")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "base")
+
+            git(repo_root, "checkout", "-b", "feature")
+            write_text(repo_root / "estimate.txt", "head line 1\nhead line 2\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "head change")
+            write_text(repo_root / "estimate.txt", "working line 1\nworking line 2\n")
+
+            change = collect_diff_change(repo_root, "main", "HEAD", True)
+
+            self.assertEqual(change["files"], ["estimate.txt"])
+            self.assertEqual(change["lines_added"], 2)
+            self.assertEqual(change["lines_deleted"], 0)
+            self.assertEqual(change["lines_changed"], 2)
+            self.assertEqual(change["max_file_churn"], 2)
+
     def test_include_working_tree_honors_explicit_head_ref(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo_root = Path(tmp_dir)
