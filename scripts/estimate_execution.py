@@ -210,10 +210,20 @@ def collect_git_diff_stats(repo_root: Path, revision_args: list[str]) -> dict:
     }
 
 
+def resolve_commit(repo_root: Path, ref: str) -> str:
+    return run_git(repo_root, ["rev-parse", "--verify", f"{ref}^{{commit}}"]).strip()
+
+
 def collect_diff_change(repo_root: Path, base_ref: str, head_ref: str, include_working_tree: bool) -> dict:
+    add_separate_working_tree_stats = False
+
     if include_working_tree:
         merge_base = run_git(repo_root, ["merge-base", base_ref, head_ref]).strip()
-        revision_args = [merge_base, head_ref]
+        if resolve_commit(repo_root, head_ref) == resolve_commit(repo_root, "HEAD"):
+            revision_args = [merge_base]
+        else:
+            revision_args = [merge_base, head_ref]
+            add_separate_working_tree_stats = True
     else:
         revision_args = [f"{base_ref}...{head_ref}"]
 
@@ -224,7 +234,7 @@ def collect_diff_change(repo_root: Path, base_ref: str, head_ref: str, include_w
     binaries = stats["binaries_touched"]
     max_file_churn = stats["max_file_churn"]
 
-    if include_working_tree:
+    if add_separate_working_tree_stats:
         working_tree_stats = collect_git_diff_stats(repo_root, ["HEAD"])
         files = normalize_paths([*files, *working_tree_stats["files"]])
         added += working_tree_stats["lines_added"]
@@ -232,6 +242,7 @@ def collect_diff_change(repo_root: Path, base_ref: str, head_ref: str, include_w
         binaries += working_tree_stats["binaries_touched"]
         max_file_churn = max(max_file_churn, working_tree_stats["max_file_churn"])
 
+    if include_working_tree:
         untracked = normalize_paths(
             split_null_terminated(
                 run_git(repo_root, ["ls-files", "--others", "--exclude-standard", "-z"])
