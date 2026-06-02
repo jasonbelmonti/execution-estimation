@@ -212,8 +212,8 @@ The skill recommends splitting work when any of these are true:
 
 - Base story points `>= 8`
 - Base story points `>= 13`, even for decomposed child tasks
-- Files touched `>= 18`
-- Lines changed `>= 1500`
+- Files touched `>= 12`
+- Lines changed `>= 1000`
 
 When estimating a child task that already came from decomposition, pass `--decomposition-depth 1`. At depth greater than `0`, the estimator suppresses repeat decomposition from base story points `>= 8` unless a hard footprint threshold also matches. This prevents recursive split loops.
 

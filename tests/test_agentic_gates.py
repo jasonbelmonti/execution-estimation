@@ -132,13 +132,33 @@ class AgenticGateTests(unittest.TestCase):
         self.assertTrue(planning.blocks_execution)
 
     def test_decomposition_depth_suppresses_repeat_child_splits(self) -> None:
-        paths = [f"src/features/foo/file{i}.ts" for i in range(1, 13)]
+        paths = [f"src/features/foo/file{i}.ts" for i in range(1, 12)]
 
         _story_points, first_pass, _planning = gate_assessment(paths, depth=0)
         _story_points, child_pass, _planning = gate_assessment(paths, depth=1)
 
         self.assertTrue(first_pass.recommended)
         self.assertFalse(child_pass.recommended)
+
+    def test_hard_file_threshold_forces_child_decomposition(self) -> None:
+        paths = [f"src/features/foo/file{i}.ts" for i in range(1, 13)]
+
+        _story_points, decomposition, _planning = gate_assessment(paths, depth=1)
+
+        self.assertTrue(decomposition.recommended)
+        self.assertIn("decomposition rule matched: files touched >= 12", decomposition.rationale)
+
+    def test_hard_line_threshold_forces_child_decomposition(self) -> None:
+        change = proposal_change(
+            [f"src/features/foo/file{i}.ts" for i in range(1, 12)],
+            lines_changed=1000,
+        )
+        story_points = estimate_story_points(change)
+
+        decomposition = assess_decomposition(change, story_points.base_story_points, 1)
+
+        self.assertTrue(decomposition.recommended)
+        self.assertIn("decomposition rule matched: lines changed >= 1000", decomposition.rationale)
 
     def test_include_working_tree_reports_net_churn_for_current_head(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

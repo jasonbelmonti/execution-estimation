@@ -64,8 +64,8 @@ Add weights once per matched condition:
 Recommend decomposition when any condition is true:
 - Base story points `>= 8`
 - Base story points `>= 13`, even when estimating a decomposed child task
-- Files touched `>= 18`
-- Lines changed `>= 1500`
+- Files touched `>= 12`
+- Lines changed `>= 1000`
 
 When `--decomposition-depth` is greater than `0`, suppress decomposition from base story points `>= 8` unless one of the hard footprint thresholds also matches. This prevents infinite decomposition loops for already-split child work.
 
