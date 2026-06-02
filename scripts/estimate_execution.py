@@ -14,6 +14,8 @@ from blast_radius import assess_blast_radius
 from planning_recommendation import assess_planning_recommendation
 
 POINTS = [1, 2, 3, 5, 8, 13]
+HARD_DECOMPOSITION_FILE_THRESHOLD = 12
+HARD_DECOMPOSITION_LINE_THRESHOLD = 1000
 SOURCE_EXTENSIONS = {
     ".c", ".cc", ".cpp", ".cs", ".css", ".go", ".h", ".hpp", ".html",
     ".java", ".js", ".json", ".jsx", ".kt", ".kts", ".m", ".md", ".php",
@@ -370,10 +372,14 @@ def assess_decomposition(
 ) -> DecompositionAssessment:
     rationale: list[str] = []
 
-    if change["files_touched"] >= 18:
-        rationale.append("decomposition rule matched: files touched >= 18")
-    if change["lines_changed"] >= 1500:
-        rationale.append("decomposition rule matched: lines changed >= 1500")
+    if change["files_touched"] >= HARD_DECOMPOSITION_FILE_THRESHOLD:
+        rationale.append(
+            f"decomposition rule matched: files touched >= {HARD_DECOMPOSITION_FILE_THRESHOLD}"
+        )
+    if change["lines_changed"] >= HARD_DECOMPOSITION_LINE_THRESHOLD:
+        rationale.append(
+            f"decomposition rule matched: lines changed >= {HARD_DECOMPOSITION_LINE_THRESHOLD}"
+        )
     if base_story_points_value >= 13:
         rationale.append("decomposition rule matched: base story points >= 13")
 
