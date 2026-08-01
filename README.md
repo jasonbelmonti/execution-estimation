@@ -247,8 +247,8 @@ Proposal mode is less certain, but that uncertainty is reflected in adjusted sto
 
 ## Related files
 
-- `SKILL.md`: agent instructions for using the skill
-- `references/estimation-rubric.md`: thresholds and deterministic rules
-- `scripts/estimate_execution.py`: main estimator
-- `scripts/blast_radius.py`: blast-radius logic
-- `scripts/planning_recommendation.py`: planning recommendation logic
+- `skills/execution-estimation/SKILL.md`: agent instructions for using the skill
+- `skills/execution-estimation/references/estimation-rubric.md`: thresholds and deterministic rules
+- `skills/execution-estimation/scripts/estimate_execution.py`: main estimator
+- `skills/execution-estimation/scripts/blast_radius.py`: blast-radius logic
+- `skills/execution-estimation/scripts/planning_recommendation.py`: planning recommendation logic
